@@ -18,3 +18,6 @@ pdflatex apj
 pdflatex apj
 ```
 
+In Overleaf or wherever you are writing your paper, it is usually easiest to include the `auth.tex` file (using `\input{auth.tex}`); see the example `apj.tex` file for a usage example.
+
+Usually we end up reorganizing the acknowledgments by hand, to put institutional ones first, followed by alphabetical individual acknowledgments.
