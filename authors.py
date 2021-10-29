@@ -90,7 +90,7 @@ def fix_umlaut(name):
 
 def check_input(opt):
     if opt.apj == opt.nature == True:
-        print("Either --apj or --nature is True, not both.")
+        debug("Either --apj or --nature is True, not both.")
         exit()
 
 def main(opt):
@@ -182,7 +182,6 @@ def main(opt):
     # ApJ format
     if opt.apj == 'True':
         for auth,orcid,affil in authors:
-            print(auth)
             orctxt = ''
             if len(orcid):
                 orctxt = '[%s]' % orcid
