@@ -1,37 +1,100 @@
 import re
 import numpy as np
+import sys
+import argparse
+import string
+
+parser = argparse.ArgumentParser(description="""This script will parse two google sheets into one .tex file suitable for large N author papers.
+                                                Useage:
+                                                python authors.py author_sheet.tsv affiliation_sheet.tsv > outfile.tex""")
+parser.add_argument('auth_tsv')
+parser.add_argument('affil_tsv')
+parser.add_argument('--discard',
+                    type=int,
+                    default=3,
+                    help='Number of lines to discard from the top of the authors spreadsheet (default: %(default)s).')
+parser.add_argument('--discard-affil',
+                    type=int,
+                    default=1,
+                    help='Number of lines to discard from the top of the affiliations spreadsheet (default: %(default)s).')
+parser.add_argument('--apj',
+                    type=str,
+                    default='True',
+                    help='if --apj True, will create the author list in ApJ(L) format (default: %(default)s).')
+parser.add_argument('--nature',
+                    type=str,
+                    default='False',
+                    help='if --nature True, will create the author list in Nature format (default: %(default)s).')
+parser.add_argument('--sort_lastname',
+                    type=str,
+                    default='False',
+                    help='if --sort_lastname True, it will sort the authors on their lastname. Else, it will keep the order of the google sheet (default: %(default)s).')
+parser.add_argument('--initials',
+                    type=str,
+                    default='True',
+                    help='if --initials True will replace non-surnames with initials. I.e. Mark P Snelders -> M.~P.~Snelders (default: %(default)s).')
+
+
+#
+# Here we assume the spreadsheet has columns:
+#
+# | Lastname  |  First names  |  x  |  x  |  ORCID  |  Affiliations  |  Acks  | ...
+#
+# And we assume that the affiliations spreadsheet has two columns:
+#
+# | Affiliations | Affiliation_Acronyms |
+#
+parser.add_argument('--lastname_index',
+                    type=int,
+                    default=0,
+                    help='Index of author last name in spreadsheet (default: %(default)s).')
+parser.add_argument('--firstname_index',
+                    type=int,
+                    default=1,
+                    help='Index of author non-last names in spreadsheet (default: %(default)s).')
+parser.add_argument('--orcid_index',
+                    type=int,
+                    default=4,
+                    help='Index of author ORCID in spreadsheet (default: %(default)s).')
+parser.add_argument('--affil_index',
+                    type=int,
+                    default=5,
+                    help='Index of author affiliation acronyms in spreadsheet (default: %(default)s).')
+parser.add_argument('--ack_index',
+                    type=int,
+                    default=6,
+                    help='Index of author acknowledgements in spreadsheet (default: %(default)s).')
+
+opt = parser.parse_args()
 
 def debug(*args):
-    import sys
     print(*args, file=sys.stderr)
 
-def main():
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument('auth_tsv')
-    parser.add_argument('affil_tsv')
-    parser.add_argument('--discard', type=int, default=3,
-                        help='Number of lines to discard from the top of the authors spreadsheet, default %(default)')
-    parser.add_argument('--discard-affil', type=int, default=1,
-                        help='Number of lines to discard from the top of the affiliations spreadsheet, default %(default)')
+def name_to_initials(name):
+    namesplit = name.split() # 'Mark P Snelders' -> ['Mark', 'P', 'Snelders']
+    newname = [x[0] for x in namesplit] # ['Mark', 'P', 'Snelders'] -> ['M', 'P', 'S']
+    newname[-1] = namesplit[-1] # ['M', 'P', 'S'] -> ['M', 'P', 'Snelders']
+    newname = ".~".join(newname) # ['M', 'P', 'Snelders'] -> M.~P.~Snelders
+    if not (newname[0] in string.ascii_letters):
+        debug("WARNING: Possible problem found with the name: {}. Current outname: {}".format(name, newname))
+    return newname
 
-    # Here we assume the spreadsheet has columns:
-    #
-    # Lastname  |  First names  |  x  |  x  |  ORCID  |  Affiliations  |  Acks  | ...
-    #
-    parser.add_argument('--lastname_index', type=int, default=0,
-                        help='Index of author last name in spreadsheet')
-    parser.add_argument('--firstname_index', type=int, default=1,
-                        help='Index of author non-last names in spreadsheet')
-    parser.add_argument('--orcid_index', type=int, default=4,
-                        help='Index of author ORCID in spreadsheet')
-    parser.add_argument('--affil_index', type=int, default=5,
-                        help='Index of author affiliation acronyms in spreadsheet')
-    parser.add_argument('--ack_index', type=int, default=6,
-                        help='Index of author acknowledgements in spreadsheet')
+def fix_umlaut(name):
+    chars_to_fix = [('Ä', '\\"{A}'), ('ä', '\\"{a}'), ('Ë', '\\"{E}'),\
+                    ('ë', '\\"{e}'), ('Ï', '\\"{I}'), ('ï', '\\"{i}'),\
+                    ('Ö', '\\"{O}'), ('ö', '\\"{o}'), ('Ü', '\\"{u}'),\
+                    ('ü', '\\"{u}'), ('Ÿ', '\\"{Y}'), ('ÿ', '\\"{y}')]
+    for c in chars_to_fix:
+        name = name.replace(c[0], c[1])
+    return name
 
-    opt = parser.parse_args()
+def check_input(opt):
+    if opt.apj == opt.nature == True:
+        print("Either --apj or --nature is True, not both.")
+        exit()
 
+def main(opt):
+    check_input(opt)
     # Export Google spreadsheet as TSV...
     f  = open(opt.auth_tsv) #'authors-cat.tsv'
     f2 = open(opt.affil_tsv) #'affils-cat.tsv'
@@ -70,9 +133,11 @@ def main():
         lastname  = lastname.strip()
         firstname = firstname.strip()
         name = firstname + ' ' + lastname
-        # The author list is sorted by lastname
+
+        # The author list can be sorted by lastname
         lastnames.append(lastname)
 
+        # Mark: I don't think this actually works
         # Search for and stick "~" characters in initials, to produce
         # better Latex spacing.
         while True:
@@ -82,11 +147,16 @@ def main():
             #debug('Match:', name, '->', m)
             #debug(m[0], '/', m[1], '/', m[2])
             name = name[:m.start()] + m[1]+'~'+m[2] + name[m.end():]
-        # Hi Moritz :)
-        name = name.replace('ü', '\\"{u}')
+
+        # fix umlauts
+        name = fix_umlaut(name)
 
         if len(ack):
             acks.append(ack)
+
+        if opt.initials == 'True':
+            name = name_to_initials(name)
+
         authors.append((name, orcid, affils))
 
     # Parse affiliation acronym expansion spreadsheet
@@ -100,15 +170,19 @@ def main():
         full,acro = words
         affilmap[acro] = full
 
+
+
+    if opt.sort_lastname == 'True':
+        # Sort by last name
+        I = np.argsort(lastnames)
+        authors = [authors[i] for i in I]
+        lastnames = [lastnames[i] for i in I]
     debug('Last names:', lastnames)
 
-    # Sort by last name
-    I = np.argsort(lastnames)
-    authors = [authors[i] for i in I]
-
     # ApJ format
-    if True:
+    if opt.apj == 'True':
         for auth,orcid,affil in authors:
+            print(auth)
             orctxt = ''
             if len(orcid):
                 orctxt = '[%s]' % orcid
@@ -117,7 +191,7 @@ def main():
                 print('  \\affiliation{%s}' % affilmap.get(aff, aff))
 
     # Nature format
-    if False:
+    if opt.nature == 'True':
         txt = []
         uaffils = []
         txt.append('\\author{')
@@ -131,13 +205,13 @@ def main():
                     uaffils.append(aff)
                 sups.append(i+1)
             sep = ',' if iauth < len(authors)-1 else ''
-        
+
             affiltxt = ''
             if len(sups):
                 affiltxt = '$^{%s}$' % (','.join(['%i'%i for i in sups]))
             txt.append('%s%s%s \\allowbreak' % (auth, affiltxt, sep))
-        
-        txt.append('}')    
+
+        txt.append('}')
         txt.append('\\newcommand{\\affils}{')
         txt.append('\\begin{affiliations}')
         for aff in uaffils:
@@ -159,4 +233,5 @@ def main():
     print(r'}')
 
 if __name__ == '__main__':
-    main()
+    opt = parser.parse_args()
+    main(opt)
